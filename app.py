@@ -6,6 +6,7 @@ import io
 import time
 import soundfile as sf
 import pykakasi # Impor library untuk transliterasi Romaji
+import difflib # Impor library untuk membandingkan teks
 
 # --- KONFIGURASI MODEL ---
 MODEL_WHISPER_BASE = "openai/whisper-base"
@@ -23,11 +24,84 @@ converter = kks.getConverter()
 # --- CACHE MODEL ---
 @st.cache_resource
 def load_asr_model(model_name):
+    # This message is shown in the main app loading spinner
     device = 0 if torch.cuda.is_available() else -1
     asr_pipe = pipeline("automatic-speech-recognition", model=model_name, device=device)
     return asr_pipe
 
-# Fungsi untuk memuat model terjemahan tidak diperlukan lagi (sesuai revisi sebelumnya)
+
+# --- UTILITY FUNCTION FOR TEXT COMPARISON ---
+def highlight_diff(text1, text2, label1="Teks 1", label2="Teks 2"):
+    """
+    Compares two texts and returns HTML that highlights the differences.
+    Used to display differences between transcriptions side-by-side.
+    """
+    matcher = difflib.SequenceMatcher(None, text1.split(), text2.split())
+    
+    diff_text1 = []
+    diff_text2 = []
+
+    for opcode, a_start, a_end, b_start, b_end in matcher.get_opcodes():
+        if opcode == 'equal':
+            diff_text1.extend(text1.split()[a_start:a_end])
+            diff_text2.extend(text2.split()[b_start:b_end])
+        elif opcode == 'replace':
+            deleted_from_1 = [f"<span style='background-color: #ffdddd; text-decoration: line-through;'>{word}</span>" for word in text1.split()[a_start:a_end]]
+            inserted_in_2 = [f"<span style='background-color: #ddffdd;'>{word}</span>" for word in text2.split()[b_start:b_end]]
+            
+            diff_text1.extend(deleted_from_1)
+            diff_text2.extend(inserted_in_2)
+        elif opcode == 'delete':
+            deleted_from_1 = [f"<span style='background-color: #ffdddd; text-decoration: line-through;'>{word}</span>" for word in text1.split()[a_start:a_end]]
+            
+            diff_text1.extend(deleted_from_1)
+            diff_text2.extend(["<span style='color: #888888; font-style: italic;'>[kosong]</span>" for _ in range(a_end - a_start)])
+        elif opcode == 'insert':
+            inserted_in_2 = [f"<span style='background-color: #ddffdd;'>{word}</span>" for word in text2.split()[b_start:b_end]]
+            
+            diff_text1.extend(["<span style='color: #888888; font-style: italic;'>[kosong]</span>" for _ in range(b_end - b_start)])
+            diff_text2.extend(inserted_in_2)
+            
+    html_output = f"""
+    <style>
+        .diff-table {{
+            width: 100%;
+            border-collapse: collapse;
+            font-family: monospace; /* Font monospasi agar alignment lebih baik */
+        }}
+        .diff-table th, .diff-table td {{
+            border: 1px solid #444;
+            padding: 8px;
+            text-align: left;
+            vertical-align: top;
+        }}
+        .diff-table th {{
+            background-color: #333;
+            color: white;
+        }}
+        .diff-table td {{
+            background-color: #222;
+            color: #eee;
+        }}
+        .diff-table span[style*="background-color: #ffdddd"] {{ background-color: #ffdddd; color: #333; }} /* Merah muda */
+        .diff-table span[style*="background-color: #ddffdd"] {{ background-color: #ddffdd; color: #333; }} /* Hijau muda */
+    </style>
+    <table class="diff-table">
+        <thead>
+            <tr>
+                <th>{label1}</th>
+                <th>{label2}</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>{" ".join(diff_text1)}</td>
+                <td>{" ".join(diff_text2)}</td>
+            </tr>
+        </tbody>
+    </table>
+    """
+    return html_output
 
 
 # --- FUNGSI PEMROSESAN AUDIO ---
@@ -37,14 +111,14 @@ def convert_to_romaji(text_japanese):
         return ""
     return converter.do(text_japanese)
 
-def process_audio_with_model(audio_path, asr_pipeline, model_label):
+def process_audio_with_model(audio_path, asr_pipeline, model_label): # argumen translator_ja_en_pipeline dihapus
     """Memproses audio dengan model ASR tertentu."""
     st.subheader(f"Hasil dari: {model_label}")
     
+    transcription_japanese = "Error saat transkripsi." # Default error
+    
     # st.status() untuk progress yang lebih interaktif (Streamlit 1.25+)
-    # Jika versi Streamlit Anda lebih rendah, gunakan st.spinner seperti sebelumnya
     try:
-        # Pengecekan versi Streamlit untuk st.status
         if hasattr(st, 'status'):
             with st.status(f"⏳ Sedang mentranskripsi audio dengan {model_label}...", expanded=True) as status_box:
                 start_time_asr = time.time()
@@ -62,18 +136,21 @@ def process_audio_with_model(audio_path, asr_pipeline, model_label):
             
     except Exception as e:
         st.error(f"❌ Terjadi kesalahan saat transkripsi: {e}")
-        transcription_japanese = "Error saat transkripsi." 
+        # Log error detail ke console Streamlit untuk debugging
+        st.exception(e) 
     
-    # Tampilkan Transkripsi Jepang Asli dalam expander
-    with st.expander("Lihat Transkripsi Jepang Asli (Kanji/Kana)"):
+    # Tampilkan Transkripsi Jepang Asli dan Romaji dalam expander
+    st.markdown(f"**Transkripsi dari {model_label}:**")
+    with st.expander(f"Lihat detail transkripsi {model_label}"):
+        st.markdown("**Kanji/Kana:**")
         st.code(transcription_japanese)
-
-    # Tampilkan Romaji dalam expander
-    with st.expander("Lihat Romaji"):
+        st.markdown("**Romaji:**")
         romaji_text = convert_to_romaji(transcription_japanese)
         st.code(romaji_text)
     
     st.write("---") # Garis pemisah antar model
+    
+    return transcription_japanese # Mengembalikan hasil transkripsi untuk perbandingan
 
 
 # --- INTERFACE PENGGUNA STREAMLIT ---
@@ -83,17 +160,22 @@ st.title("🗣️ Perbandingan ASR Audio Jepang")
 st.markdown("Unggah file audio berbahasa Jepang untuk membandingkan transkripsi dari dua model Whisper, serta mendapatkan Romaji.")
 st.markdown("---")
 
-# Gunakan st.tabs untuk mengatur konten
+# Muat model ASR
+with st.spinner("⏳ Memuat semua model AI (ASR)... Ini mungkin butuh beberapa saat."):
+    asr_pipeline_base = load_asr_model(MODEL_WHISPER_BASE)
+    anime_whisper_pipeline = load_asr_model(MODEL_ANIME_WHISPER)
+st.success("✅ Semua model AI berhasil dimuat dan siap digunakan.")
+
+# Inisialisasi session_state untuk menyimpan hasil transkripsi
+if 'base_transcript' not in st.session_state:
+    st.session_state.base_transcript = ""
+if 'anime_transcript' not in st.session_state:
+    st.session_state.anime_transcript = ""
+
+
 tab1, tab2 = st.tabs(["Aplikasi Utama", "Tentang Proyek Ini"])
 
 with tab1: # Konten utama aplikasi
-    # Muat model ASR
-    with st.spinner("⏳ Memuat semua model AI (ASR)... Ini mungkin butuh beberapa saat."):
-        asr_pipeline_base = load_asr_model(MODEL_WHISPER_BASE)
-        anime_whisper_pipeline = load_asr_model(MODEL_ANIME_WHISPER)
-    st.success("✅ Semua model AI berhasil dimuat dan siap digunakan.")
-
-
     st.header("1. Unggah File Audio Bahasa Jepang")
     uploaded_file = st.file_uploader(
         "Pilih file audio (.wav, .mp3, .flac) berbahasa Jepang:",
@@ -122,11 +204,24 @@ with tab1: # Konten utama aplikasi
 
     if st.button("▶️ Mulai Perbandingan!"):
         if audio_path:
-            process_audio_with_model(audio_path, asr_pipeline_base, "OpenAI Whisper (Base)")
-            process_audio_with_model(audio_path, anime_whisper_pipeline, "litagin/anime-whisper")
+            # Panggil process_audio_with_model dan simpan hasilnya di session_state
+            st.session_state.base_transcript = process_audio_with_model(audio_path, asr_pipeline_base, "OpenAI Whisper (Base)")
+            st.session_state.anime_transcript = process_audio_with_model(audio_path, anime_whisper_pipeline, "litagin/anime-whisper")
 
+            # Hapus file sementara setelah selesai memproses
             if os.path.exists(audio_path):
                 os.remove(audio_path)
+            
+            # Setelah kedua transkripsi didapat, tampilkan perbandingan langsung
+            if st.session_state.base_transcript and st.session_state.anime_transcript and \
+               st.session_state.base_transcript != "Error saat transkripsi." and \
+               st.session_state.anime_transcript != "Error saat transkripsi.":
+                
+                st.markdown("### Perbandingan Langsung Transkripsi (Kanji/Kana)")
+                diff_output_html = highlight_diff(st.session_state.base_transcript, st.session_state.anime_transcript, "Whisper Base", "Anime-Whisper")
+                st.markdown(diff_output_html, unsafe_allow_html=True)
+            else:
+                st.warning("Tidak dapat membandingkan transkripsi karena salah satu atau kedua model gagal atau menghasilkan error.")
         else:
             st.warning("Silakan unggah file audio Anda terlebih dahulu di bagian '1. Unggah File Audio'.")
 
@@ -143,12 +238,13 @@ with tab2: # Konten tentang proyek
     - Mengunggah file audio (.wav, .mp3, .flac) berbahasa Jepang.
     - Menampilkan transkripsi asli dalam aksara Jepang (Kanji/Kana).
     - Mengonversi transkripsi ke Romaji menggunakan pustaka PyKakasi.
-    - Membandingkan hasil dari kedua model untuk audio yang sama.
+    - Menampilkan **perbandingan langsung** antara hasil transkripsi dari kedua model untuk melihat perbedaannya dengan jelas.
 
     ### Metode:
     - **ASR:** Model Transformer Encoder-Decoder mengubah audio menjadi teks.
     - **Transliterasi:** PyKakasi untuk konversi Kanji/Kana ke Romaji.
-    - **Hosting:** Aplikasi web dibangun dengan Streamlit dan di-deploy menggunakan GitHub, dengan dependensi sistem seperti FFmpeg diatur melalui `packages.txt`.
+    - **Perbandingan Teks:** Menggunakan pustaka `difflib` untuk menyoroti perbedaan antar transkripsi.
+    - **Hosting:** Aplikasi web dibangun dengan Streamlit dan di-deploy menggunakan GitHub, dengan dependensi sistem seperti FFmpeg, pkg-config, dan cmake diatur melalui `packages.txt`.
 
     ### Kontak:
     Untuk pertanyaan atau informasi lebih lanjut, silakan hubungi [Nama Anda/Link GitHub Anda].
