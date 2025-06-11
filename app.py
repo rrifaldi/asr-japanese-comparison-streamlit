@@ -1,6 +1,5 @@
 # Sel 2: Membuat file app.py (Revisi Final untuk Terjemahan Melalui Bahasa Inggris - Coba Model Lain)
 
-%%writefile app.py
 import streamlit as st
 from transformers import pipeline
 import torch
