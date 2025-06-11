@@ -9,74 +9,13 @@ import pykakasi
 import difflib
 from jiwer import wer, cer
 
-# --- KONFIGURASI MODEL ---
-# Catatan: Whisper Base lebih kecil dan lebih cepat. Anime-Whisper mungkin lebih besar
-# (seringkali di-fine-tune dari versi 'large' atau 'medium' dari Whisper).
-# Kecepatan akan bervariasi secara signifikan.
-MODEL_WHISPER_BASE = "openai/whisper-base"
-MODEL_ANIME_WHISPER = "litagin/anime-whisper"
-
-# --- INISIALISASI PYKAKASI UNTUK ROMAJI ---
-# Menggunakan block try-except untuk menangani potensi error instalasi/inisialisasi
-# Ini akan mencegah aplikasi crash jika pykakasi tidak berfungsi.
-PYKAKASI_INITIALIZED = False
-converter = None
-try:
-    kks_instance = pykakasi.kakasi()
-    # Mengatur sistem Romaji ke Hepburn (paling umum)
-    # Ini secara implisit menangani konversi Hiragana/Katakana/Kanji ke alfabet Latin
-    kks_instance.add_sys_kana_type("Hepburn")
-    converter = kks_instance.getConverter()
-    PYKAKASI_INITIALIZED = True
-except Exception as e:
-    st.warning(f"Peringatan: Gagal menginisialisasi pykakasi untuk transliterasi Romaji: {e}")
-    st.info("Transliterasi Romaji tidak akan tersedia. Pastikan `pykakasi` terinstal dengan benar.")
-    # Dummy converter jika pykakasi gagal
-    class DummyConverter:
-        def do(self, text):
-            return text
-    converter = DummyConverter()
-
-
-# --- CACHE MODEL ASR ---
-@st.cache_resource
-def load_asr_model(model_name):
-    """
-    Memuat model Automatic Speech Recognition (ASR) dari Hugging Face Transformers.
-    Menggunakan cache Streamlit untuk menghindari pemuatan ulang setiap refresh.
-    """
-    st.info(f"Mengunduh dan memuat model: {model_name}...")
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    device_id = 0 if device == "cuda" else -1
-
-    # Menggunakan float16 untuk GPU agar lebih cepat, float32 untuk CPU
-    torch_dtype = torch.float16 if device == "cuda" else torch.float32
-
-    try:
-        asr_pipe = pipeline(
-            "automatic-speech-recognition",
-            model=model_name,
-            device=device_id,
-            torch_dtype=torch_dtype,
-            # Parameter ini membantu efisiensi memori, sangat berguna untuk model besar
-            model_kwargs={"low_cpu_mem_usage": True, "use_safetensors": True}
-        )
-        st.success(f"Model '{model_name}' berhasil dimuat pada perangkat: {device.upper()}.")
-        return asr_pipe
-    except Exception as e:
-        st.error(f"❌ Gagal memuat model '{model_name}': {e}")
-        st.info("Ini mungkin karena masalah jaringan, kurang memori, atau model tidak tersedia.")
-        st.stop() # Hentikan aplikasi jika model penting tidak bisa dimuat
-        return None # Mengembalikan None jika gagal
-
-
-# --- FUNGSI UTILITY: HIGHLIGHT PERBEDAAN TEKS ---
+# --- FUNGSI UTILITY: HIGHLIGHT PERBEDAAN TEKS (TETAP SAMA) ---
+# Fungsi ini relatif stabil, tidak perlu diubah lagi
 def highlight_diff(text1, text2, label1="Teks 1", label2="Teks 2"):
     """
     Membandingkan dua teks karakter demi karakter dan menghasilkan HTML
     yang menyoroti perbedaan dengan warna latar belakang transparan.
     """
-    # Pastikan input adalah string, tangani None atau input non-string
     text1 = str(text1 if text1 is not None else "")
     text2 = str(text2 if text2 is not None else "")
 
@@ -90,30 +29,25 @@ def highlight_diff(text1, text2, label1="Teks 1", label2="Teks 2"):
             diff_html1.append(text1[a_start:a_end])
             diff_html2.append(text2[b_start:b_end])
         elif opcode == 'replace':
-            # Highlight penggantian dengan warna latar belakang transparan
             deleted_part = f"<span style='background-color: rgba(255, 120, 120, 0.3);'>{text1[a_start:a_end]}</span>"
             inserted_part = f"<span style='background-color: rgba(120, 255, 120, 0.3);'>{text2[b_start:b_end]}</span>"
             diff_html1.append(deleted_part)
             diff_html2.append(inserted_part)
         elif opcode == 'delete':
-            # Highlight penghapusan dengan latar belakang transparan dan garis coret
             deleted_part = f"<span style='background-color: rgba(255, 120, 120, 0.3); text-decoration: line-through;'>{text1[a_start:a_end]}</span>"
             diff_html1.append(deleted_part)
-            # Placeholder untuk bagian yang dihapus di teks kedua
             diff_html2.append(f"<span style='color: #888888; font-style: italic;'>[{' ' * max(1, a_end - a_start)}]</span>")
         elif opcode == 'insert':
-            # Highlight penambahan dengan latar belakang transparan dan garis bawah
             inserted_part = f"<span style='background-color: rgba(120, 255, 120, 0.3);'><u>{text2[b_start:b_end]}</u></span>"
             diff_html1.append(f"<span style='color: #888888; font-style: italic;'>[{' ' * max(1, b_end - b_start)}]</span>")
             diff_html2.append(inserted_part)
 
-    # CSS untuk tampilan tabel perbandingan
     html_output = f"""
     <style>
         .diff-table {{
             width: 100%;
             border-collapse: collapse;
-            font-family: 'Noto Sans JP', 'Segoe UI', 'Meiryo', 'Yu Gothic', sans-serif; /* Font mendukung karakter Jepang */
+            font-family: 'Noto Sans JP', 'Segoe UI', 'Meiryo', 'Yu Gothic', sans-serif;
             font-size: 1.1em;
             line-height: 1.5;
             margin-top: 15px;
@@ -124,7 +58,7 @@ def highlight_diff(text1, text2, label1="Teks 1", label2="Teks 2"):
             padding: 10px;
             text-align: left;
             vertical-align: top;
-            word-break: break-word; /* Memastikan teks panjang pecah baris */
+            word-break: break-word;
         }}
         .diff-table th {{
             background-color: #333;
@@ -134,7 +68,6 @@ def highlight_diff(text1, text2, label1="Teks 1", label2="Teks 2"):
             background-color: #222;
             color: #eee;
         }}
-        /* Gaya untuk highlighting yang lebih transparan dan terbaca */
         .diff-table span[style*="background-color: rgba(255, 120, 120, 0.3)"] {{
             background-color: rgba(255, 120, 120, 0.3);
             color: #eee;
@@ -174,7 +107,7 @@ def highlight_diff(text1, text2, label1="Teks 1", label2="Teks 2"):
 
 
 # --- FUNGSI PEMROSESAN AUDIO DAN TRANSKRIPSI ---
-def process_audio_with_model(audio_file_path, asr_pipeline, model_label):
+def process_audio_with_model(audio_file_path, asr_pipeline, model_label, pykakasi_converter, pykakasi_initialized):
     """
     Memproses file audio menggunakan pipeline ASR yang diberikan
     dan menampilkan hasil transkripsi (Kanji/Kana dan Romaji) serta waktu.
@@ -185,7 +118,6 @@ def process_audio_with_model(audio_file_path, asr_pipeline, model_label):
     duration_asr = 0.0
 
     try:
-        # Menggunakan st.status() untuk progress bar yang lebih baik (Streamlit 1.25+)
         if hasattr(st, 'status'):
             with st.status(f"⏳ Sedang mentranskripsi audio dengan {model_label}...", expanded=True) as status_box:
                 start_time_asr = time.time()
@@ -207,38 +139,100 @@ def process_audio_with_model(audio_file_path, asr_pipeline, model_label):
 
     except Exception as e:
         st.error(f"❌ Terjadi kesalahan saat transkripsi dengan {model_label}: {e}")
-        st.exception(e) # Menampilkan detail error di log Streamlit
-        transcription_japanese = "Error saat transkripsi." # Set error message
-        duration_asr = 0.0 # Set durasi ke 0 jika error
+        st.exception(e)
+        transcription_japanese = "Error saat transkripsi."
+        duration_asr = 0.0
 
-    # Tampilkan Transkripsi Jepang Asli dan Romaji dalam expander
     st.markdown(f"**Transkripsi dari {model_label}:**")
     with st.expander(f"Lihat detail transkripsi {model_label}"):
         st.markdown("**Kanji/Kana:**")
         st.code(transcription_japanese)
         st.markdown("**Romaji:**")
-        romaji_text = converter.do(transcription_japanese) if PYKAKASI_INITIALIZED else "Transliterasi Romaji tidak tersedia."
+        # Menggunakan converter yang telah diinisialisasi
+        romaji_text = pykakasi_converter.do(transcription_japanese) if pykakasi_initialized else "Transliterasi Romaji tidak tersedia."
         st.code(romaji_text)
 
-    st.write("---") # Garis pemisah antar model
+    st.write("---")
 
     return transcription_japanese, duration_asr
 
 
-# --- INTERFACE PENGGUNA STREAMLIT ---
+# --- KONFIGURASI UMUM DAN INISIALISASI DI AWAL SKRIP ---
+# Ini harus di awal agar st.set_page_config tidak error
+MODEL_WHISPER_BASE = "openai/whisper-base"
+MODEL_ANIME_WHISPER = "litagin/anime-whisper"
+
+# Inisialisasi PYKAKASI DI SINI SEBELUM st.set_page_config
+PYKAKASI_INITIALIZED = False
+kakasi_converter = None # Nama variabel diubah agar tidak bentrok dengan "converter" di fungsi highlight_diff
+try:
+    kks_obj = pykakasi.kakasi()
+    # Kembali ke setMode untuk kompatibilitas pykakasi v2.x
+    # Ini akan memunculkan DeprecationWarning, tapi berfungsi.
+    kks_obj.setMode("H", "a") # Hiragana to Alphabet
+    kks_obj.setMode("K", "a") # Katakana to Alphabet
+    kks_obj.setMode("J", "a") # Kanji to Alphabet
+    kks_obj.setMode("r", "Hepburn") # Romaji system (paling umum)
+    kakasi_converter = kks_obj.getConverter()
+    PYKAKASI_INITIALIZED = True
+except Exception as e:
+    # st.warning() tidak bisa dipanggil di sini karena belum diinisialisasi UI Streamlit
+    print(f"Peringatan: Gagal menginisialisasi pykakasi untuk transliterasi Romaji: {e}")
+    print("Transliterasi Romaji tidak akan tersedia. Pastikan `pykakasi` terinstal dengan benar.")
+    class DummyConverter: # Dummy converter jika pykakasi gagal
+        def do(self, text):
+            return text
+    kakasi_converter = DummyConverter()
+
+
+# --- KONFIGURASI HALAMAN STREAMLIT (HARUS JADI YANG PERTAMA) ---
 st.set_page_config(layout="wide", page_title="Perbandingan ASR Audio Jepang")
 
 st.title("🗣️ Perbandingan Model ASR Audio Jepang")
 st.markdown("Unggah file audio berbahasa Jepang untuk membandingkan transkripsi dari dua model Whisper, serta mendapatkan Romaji dan analisis perbandingan.")
 st.markdown("---")
 
-# Muat model ASR (akan dilakukan sekali berkat @st.cache_resource)
+
+# --- MUAT MODEL ASR (SETELAH st.set_page_config) ---
+# Menggunakan cache Streamlit untuk efisiensi
+@st.cache_resource
+def load_asr_models_cached():
+    """Wrapper untuk memuat kedua model ASR dengan caching."""
+    # Menentukan perangkat GPU/CPU
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device_id = 0 if device == "cuda" else -1
+
+    # Tentukan torch_dtype untuk optimasi GPU (float16)
+    torch_dtype = torch.float16 if device == "cuda" else torch.float32
+
+    # Fungsi internal untuk memuat satu model
+    def _load_single_model(model_name_param):
+        st.info(f"Mengunduh dan memuat model: {model_name_param}...")
+        try:
+            pipe = pipeline(
+                "automatic-speech-recognition",
+                model=model_name_param,
+                device=device_id,
+                torch_dtype=torch_dtype,
+                model_kwargs={"low_cpu_mem_usage": True, "use_safetensors": True}
+            )
+            st.success(f"Model '{model_name_param}' berhasil dimuat pada perangkat: {device.upper()}.")
+            return pipe
+        except Exception as e:
+            st.error(f"❌ Gagal memuat model '{model_name_param}': {e}")
+            st.info("Ini mungkin karena masalah jaringan, kurang memori, atau model tidak tersedia.")
+            st.stop() # Hentikan aplikasi jika model penting tidak bisa dimuat
+            return None
+
+    asr_pipeline_base_local = _load_single_model(MODEL_WHISPER_BASE)
+    anime_whisper_pipeline_local = _load_single_model(MODEL_ANIME_WHISPER)
+    return asr_pipeline_base_local, anime_whisper_pipeline_local
+
 with st.spinner("⏳ Memuat model AI untuk Automatic Speech Recognition (ASR)... Ini mungkin butuh beberapa saat, tergantung ukuran model dan koneksi internet."):
-    asr_pipeline_base = load_asr_model(MODEL_WHISPER_BASE)
-    anime_whisper_pipeline = load_asr_model(MODEL_ANIME_WHISPER)
+    asr_pipeline_base, anime_whisper_pipeline = load_asr_models_cached()
+
 
 # Inisialisasi session_state untuk menyimpan hasil transkripsi dan durasi
-# Ini penting agar data tetap ada saat Streamlit mere-run script
 if 'base_transcript' not in st.session_state:
     st.session_state.base_transcript = ""
 if 'anime_transcript' not in st.session_state:
@@ -264,15 +258,14 @@ with tab1: # Konten utama aplikasi
         st.audio(uploaded_file, format=uploaded_file.type)
 
         try:
-            # Simpan file yang diunggah ke disk sementara agar pipeline bisa membacanya
             audio_path = "temp_uploaded_audio.wav"
             with open(audio_path, "wb") as f:
                 f.write(uploaded_file.read())
-            st.success("✅ File audio berhasil diunggah.")
+            st.success("✅ File audio berhasil diunggah. Klik 'Mulai Perbandingan!'")
         except Exception as e:
             st.error(f"❌ Error membaca file audio: {e}")
             st.info("Pastikan format file audio kompatibel dan tidak korup. Coba unggah file lain.")
-            audio_path = None # Set audio_path ke None jika ada error
+            audio_path = None
     else:
         st.info("👆 Silakan unggah file audio berbahasa Jepang untuk memulai proses.")
 
@@ -280,16 +273,14 @@ with tab1: # Konten utama aplikasi
     st.markdown("---")
     st.header("2. Hasil Perbandingan Transkripsi & Romaji")
 
-    # Tombol untuk memulai proses perbandingan
     if st.button("▶️ Mulai Perbandingan!"):
         if audio_path:
             # Panggil fungsi pemrosesan untuk kedua model dan simpan hasilnya
             st.session_state.base_transcript, st.session_state.base_duration = \
-                process_audio_with_model(audio_path, asr_pipeline_base, "OpenAI Whisper (Base)")
+                process_audio_with_model(audio_path, asr_pipeline_base, "OpenAI Whisper (Base)", kakasi_converter, PYKAKASI_INITIALIZED)
             st.session_state.anime_transcript, st.session_state.anime_duration = \
-                process_audio_with_model(audio_path, anime_whisper_pipeline, "litagin/anime-whisper")
+                process_audio_with_model(audio_path, anime_whisper_pipeline, "litagin/anime-whisper", kakasi_converter, PYKAKASI_INITIALIZED)
 
-            # Hapus file sementara setelah selesai memproses
             if os.path.exists(audio_path):
                 os.remove(audio_path)
             
@@ -309,11 +300,9 @@ with tab1: # Konten utama aplikasi
                 st.subheader("📊 Perbandingan Waktu Transkripsi:")
                 time_diff = abs(st.session_state.base_duration - st.session_state.anime_duration)
                 
-                # Tentukan model mana yang lebih cepat
                 faster_model = "OpenAI Whisper (Base)" if st.session_state.base_duration < st.session_state.anime_duration else "litagin/anime-whisper"
                 slower_model = "litagin/anime-whisper" if st.session_state.base_duration < st.session_state.anime_duration else "OpenAI Whisper (Base)"
                 
-                # Hitung persentase perbedaan kecepatan (hindari pembagian dengan nol)
                 speed_diff_percent = 0
                 if max(st.session_state.base_duration, st.session_state.anime_duration) > 0:
                     speed_diff_percent = (time_diff / max(st.session_state.base_duration, st.session_state.anime_duration)) * 100
@@ -322,19 +311,14 @@ with tab1: # Konten utama aplikasi
 
                 # Perbandingan Akurasi (Character Error Rate - CER)
                 st.subheader("⚖️ Perbandingan Kesamaan Teks (antara kedua model):")
-                # Strip spasi ekstra untuk perhitungan CER yang lebih akurat
                 ref_text_cleaned = st.session_state.base_transcript.strip()
                 hyp_text_cleaned = st.session_state.anime_transcript.strip()
 
-                if ref_text_cleaned or hyp_text_cleaned: # Pastikan setidaknya satu teks tidak kosong
+                if ref_text_cleaned or hyp_text_cleaned:
                     try:
-                        # CER dihitung sebagai persentase karakter yang berbeda.
-                        # jiwer.cer mengharapkan list of strings untuk referensi dan hipotesis.
-                        # Melewatkan string penuh dalam list (contoh: ['teks saya']) adalah cara yang valid.
                         character_error_rate = cer([ref_text_cleaned], [hyp_text_cleaned]) * 100
                         st.metric("Character Error Rate (CER)", f"{character_error_rate:.2f}%", help="Persentase karakter yang berbeda antara dua transkripsi. Dihitung sebagai (Substitusi + Penghapusan + Penambahan) / Total Karakter Referensi. Semakin rendah, semakin mirip.")
 
-                        # Analisis detail perbedaan (penggantian, penghapusan, penambahan)
                         matcher = difflib.SequenceMatcher(None, ref_text_cleaned, hyp_text_cleaned)
                         replacements = 0
                         deletions = 0
