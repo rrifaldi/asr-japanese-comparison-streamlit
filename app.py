@@ -1,20 +1,4 @@
-Anda benar sekali! Saya melihat screenshot perbandingan langsung yang Anda berikan. Meskipun tabelnya muncul, highlighting perbedaan teksnya sangat samar atau tidak terlihat jelas karena warnanya terlalu mirip dengan latar belakang gelap. Sulit sekali membedakannya, apalagi jika tidak bisa Bahasa Jepang.
 
-Kita perlu membuat highlighting-nya jauh lebih jelas dan menambahkan pesan eksplisit apakah ada perbedaan atau tidak.
-
-Solusi: Perbaiki Warna Highlight dan Tambahkan Pesan Perbandingan
-Saya akan memodifikasi fungsi highlight_diff di app.py untuk:
-
-Mengubah Warna Latar Belakang Highlight: Menggunakan warna yang kontras dengan latar belakang gelap Streamlit (misalnya, merah terang untuk yang dihapus/berbeda di satu sisi, dan hijau terang untuk yang ditambahkan/berbeda di sisi lain).
-Menambahkan Pesan Ekplisit: Memberi tahu pengguna secara langsung apakah ada perbedaan dan berapa banyak perbedaan yang ditemukan (dalam jumlah "kata").
-Revisi Kode Sel Kedua: app.py (Perbaikan Highlight dan Pesan Perbandingan)
-Tempelkan seluruh kode ini di sel kedua notebook Colab Anda (Gantikan kode app.py yang lama). Jalankan sel ini.
-
-Python
-
-# Sel 2: Membuat file app.py (Revisi untuk Perbaikan Highlight dan Pesan Perbandingan)
-
-%%writefile app.py
 import streamlit as st
 from transformers import pipeline
 import torch
