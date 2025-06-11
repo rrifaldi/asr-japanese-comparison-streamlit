@@ -246,11 +246,7 @@ with tab2: # Konten tentang proyek
     - **Perbandingan Teks:** Menggunakan pustaka `difflib` untuk menyoroti perbedaan antar transkripsi.
     - **Hosting:** Aplikasi web dibangun dengan Streamlit dan di-deploy menggunakan GitHub, dengan dependensi sistem seperti FFmpeg, pkg-config, dan cmake diatur melalui `packages.txt`.
 
-    ### Kontak:
-    Untuk pertanyaan atau informasi lebih lanjut, silakan hubungi [Nama Anda/Link GitHub Anda].
-    """)
-    st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/c/c5/Streamlit_logo_black_text.svg/1200px-Streamlit_logo_black_text.svg.png", width=150)
-    st.image("https://huggingface.co/front/assets/huggingface_logo.svg", width=150)
+
 
 
 st.markdown("---")
