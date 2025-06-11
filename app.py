@@ -1,3 +1,20 @@
+Anda benar sekali! Saya melihat screenshot perbandingan langsung yang Anda berikan. Meskipun tabelnya muncul, highlighting perbedaan teksnya sangat samar atau tidak terlihat jelas karena warnanya terlalu mirip dengan latar belakang gelap. Sulit sekali membedakannya, apalagi jika tidak bisa Bahasa Jepang.
+
+Kita perlu membuat highlighting-nya jauh lebih jelas dan menambahkan pesan eksplisit apakah ada perbedaan atau tidak.
+
+Solusi: Perbaiki Warna Highlight dan Tambahkan Pesan Perbandingan
+Saya akan memodifikasi fungsi highlight_diff di app.py untuk:
+
+Mengubah Warna Latar Belakang Highlight: Menggunakan warna yang kontras dengan latar belakang gelap Streamlit (misalnya, merah terang untuk yang dihapus/berbeda di satu sisi, dan hijau terang untuk yang ditambahkan/berbeda di sisi lain).
+Menambahkan Pesan Ekplisit: Memberi tahu pengguna secara langsung apakah ada perbedaan dan berapa banyak perbedaan yang ditemukan (dalam jumlah "kata").
+Revisi Kode Sel Kedua: app.py (Perbaikan Highlight dan Pesan Perbandingan)
+Tempelkan seluruh kode ini di sel kedua notebook Colab Anda (Gantikan kode app.py yang lama). Jalankan sel ini.
+
+Python
+
+# Sel 2: Membuat file app.py (Revisi untuk Perbaikan Highlight dan Pesan Perbandingan)
+
+%%writefile app.py
 import streamlit as st
 from transformers import pipeline
 import torch
@@ -24,7 +41,6 @@ converter = kks.getConverter()
 # --- CACHE MODEL ---
 @st.cache_resource
 def load_asr_model(model_name):
-    # This message is shown in the main app loading spinner
     device = 0 if torch.cuda.is_available() else -1
     asr_pipe = pipeline("automatic-speech-recognition", model=model_name, device=device)
     return asr_pipe
@@ -33,41 +49,47 @@ def load_asr_model(model_name):
 # --- UTILITY FUNCTION FOR TEXT COMPARISON ---
 def highlight_diff(text1, text2, label1="Teks 1", label2="Teks 2"):
     """
-    Compares two texts and returns HTML that highlights the differences.
-    Used to display differences between transcriptions side-by-side.
+    Membandingkan dua teks dan mengembalikan HTML yang menyorot perbedaan.
+    Digunakan untuk menampilkan perbedaan antar transkripsi side-by-side.
+    Juga mengembalikan jumlah perbedaan.
     """
-    matcher = difflib.SequenceMatcher(None, text1.split(), text2.split())
+    s = difflib.SequenceMatcher(None, text1.split(), text2.split())
     
-    diff_text1 = []
-    diff_text2 = []
+    diff_text1_html = []
+    diff_text2_html = []
+    num_diffs = 0
 
-    for opcode, a_start, a_end, b_start, b_end in matcher.get_opcodes():
+    for opcode, a_start, a_end, b_start, b_end in s.get_opcodes():
         if opcode == 'equal':
-            diff_text1.extend(text1.split()[a_start:a_end])
-            diff_text2.extend(text2.split()[b_start:b_end])
+            diff_text1_html.extend(text1.split()[a_start:a_end])
+            diff_text2_html.extend(text2.split()[b_start:b_end])
         elif opcode == 'replace':
-            deleted_from_1 = [f"<span style='background-color: #ffdddd; text-decoration: line-through;'>{word}</span>" for word in text1.split()[a_start:a_end]]
-            inserted_in_2 = [f"<span style='background-color: #ddffdd;'>{word}</span>" for word in text2.split()[b_start:b_end]]
+            num_diffs += max(a_end - a_start, b_end - b_start)
+            deleted_from_1 = [f"<span style='background-color: #FF6B6B; color: black; font-weight: bold;'>{word}</span>" for word in text1.split()[a_start:a_end]] # Merah terang
+            inserted_in_2 = [f"<span style='background-color: #6BFF6B; color: black; font-weight: bold;'>{word}</span>" for word in text2.split()[b_start:b_end]] # Hijau terang
             
-            diff_text1.extend(deleted_from_1)
-            diff_text2.extend(inserted_in_2)
+            diff_text1_html.extend(deleted_from_1)
+            diff_text2_html.extend(inserted_in_2)
         elif opcode == 'delete':
-            deleted_from_1 = [f"<span style='background-color: #ffdddd; text-decoration: line-through;'>{word}</span>" for word in text1.split()[a_start:a_end]]
+            num_diffs += (a_end - a_start)
+            deleted_from_1 = [f"<span style='background-color: #FF6B6B; color: black; font-weight: bold;'>{word}</span>" for word in text1.split()[a_start:a_end]]
             
-            diff_text1.extend(deleted_from_1)
-            diff_text2.extend(["<span style='color: #888888; font-style: italic;'>[kosong]</span>" for _ in range(a_end - a_start)])
+            diff_text1_html.extend(deleted_from_1)
+            diff_text2_html.extend([f"<span style='color: #888888; font-style: italic;'>[kosong]</span>" for _ in range(a_end - a_start)])
         elif opcode == 'insert':
-            inserted_in_2 = [f"<span style='background-color: #ddffdd;'>{word}</span>" for word in text2.split()[b_start:b_end]]
+            num_diffs += (b_end - b_start)
+            inserted_in_2 = [f"<span style='background-color: #6BFF6B; color: black; font-weight: bold;'>{word}</span>" for word in text2.split()[b_start:b_end]]
             
-            diff_text1.extend(["<span style='color: #888888; font-style: italic;'>[kosong]</span>" for _ in range(b_end - b_start)])
-            diff_text2.extend(inserted_in_2)
+            diff_text1_html.extend([f"<span style='color: #888888; font-style: italic;'>[kosong]</span>" for _ in range(b_end - b_start)])
+            diff_text2_html.extend(inserted_in_2)
             
     html_output = f"""
     <style>
         .diff-table {{
             width: 100%;
             border-collapse: collapse;
-            font-family: monospace; /* Font monospasi agar alignment lebih baik */
+            font-family: 'Inter', monospace; /* Menggunakan Inter jika ada, fallback monospace */
+            word-break: break-word; /* Memastikan kata panjang tidak merusak layout */
         }}
         .diff-table th, .diff-table td {{
             border: 1px solid #444;
@@ -80,11 +102,13 @@ def highlight_diff(text1, text2, label1="Teks 1", label2="Teks 2"):
             color: white;
         }}
         .diff-table td {{
-            background-color: #222;
+            background-color: #1a1a1a; /* Latar belakang lebih gelap dari sebelumnya */
             color: #eee;
         }}
-        .diff-table span[style*="background-color: #ffdddd"] {{ background-color: #ffdddd; color: #333; }} /* Merah muda */
-        .diff-table span[style*="background-color: #ddffdd"] {{ background-color: #ddffdd; color: #333; }} /* Hijau muda */
+        /* Warna highlight yang diperbaiki */
+        .diff-table span[style*="background-color: #FF6B6B"] {{ background-color: #FF6B6B; color: black; }} /* Merah terang */
+        .diff-table span[style*="background-color: #6BFF6B"] {{ background-color: #6BFF6B; color: black; }} /* Hijau terang */
+        .diff-table span[style*="text-decoration: line-through"] {{ text-decoration: line-through; }} /* Garis coret untuk deleted */
     </style>
     <table class="diff-table">
         <thead>
@@ -95,13 +119,13 @@ def highlight_diff(text1, text2, label1="Teks 1", label2="Teks 2"):
         </thead>
         <tbody>
             <tr>
-                <td>{" ".join(diff_text1)}</td>
-                <td>{" ".join(diff_text2)}</td>
+                <td>{" ".join(diff_text1_html)}</td>
+                <td>{" ".join(diff_text2_html)}</td>
             </tr>
         </tbody>
     </table>
     """
-    return html_output
+    return html_output, num_diffs
 
 
 # --- FUNGSI PEMROSESAN AUDIO ---
@@ -111,7 +135,8 @@ def convert_to_romaji(text_japanese):
         return ""
     return converter.do(text_japanese)
 
-def process_audio_with_model(audio_path, asr_pipeline, model_label): # argumen translator_ja_en_pipeline dihapus
+# Mengubah fungsi process_audio_with_model agar mengembalikan hasil transkripsi
+def process_audio_with_model(audio_path, asr_pipeline, model_label):
     """Memproses audio dengan model ASR tertentu."""
     st.subheader(f"Hasil dari: {model_label}")
     
@@ -137,7 +162,7 @@ def process_audio_with_model(audio_path, asr_pipeline, model_label): # argumen t
     except Exception as e:
         st.error(f"❌ Terjadi kesalahan saat transkripsi: {e}")
         # Log error detail ke console Streamlit untuk debugging
-        st.exception(e) 
+        st.exception(e) # Menampilkan traceback error di UI
     
     # Tampilkan Transkripsi Jepang Asli dan Romaji dalam expander
     st.markdown(f"**Transkripsi dari {model_label}:**")
@@ -218,7 +243,13 @@ with tab1: # Konten utama aplikasi
                st.session_state.anime_transcript != "Error saat transkripsi.":
                 
                 st.markdown("### Perbandingan Langsung Transkripsi (Kanji/Kana)")
-                diff_output_html = highlight_diff(st.session_state.base_transcript, st.session_state.anime_transcript, "Whisper Base", "Anime-Whisper")
+                diff_output_html, num_diffs = highlight_diff(st.session_state.base_transcript, st.session_state.anime_transcript, "Whisper Base", "Anime-Whisper")
+                
+                if num_diffs > 0:
+                    st.warning(f"⚠️ Ditemukan {num_diffs} perbedaan kata antara kedua transkripsi.")
+                else:
+                    st.success("🎉 Tidak ada perbedaan yang ditemukan antara kedua transkripsi!")
+
                 st.markdown(diff_output_html, unsafe_allow_html=True)
             else:
                 st.warning("Tidak dapat membandingkan transkripsi karena salah satu atau kedua model gagal atau menghasilkan error.")
@@ -247,7 +278,7 @@ with tab2: # Konten tentang proyek
     - **Hosting:** Aplikasi web dibangun dengan Streamlit dan di-deploy menggunakan GitHub, dengan dependensi sistem seperti FFmpeg, pkg-config, dan cmake diatur melalui `packages.txt`.
 
     ### Kontak:
-    Untuk pertanyaan atau informasi lebih lanjut, silakan hubungi [Muhammad Rifki Rifaldi].
+    Untuk pertanyaan atau informasi lebih lanjut, silakan hubungi [Nama Anda/Link GitHub Anda].
     """)
     st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/c/c5/Streamlit_logo_black_text.svg/1200px-Streamlit_logo_black_text.svg.png", width=150)
     st.image("https://huggingface.co/front/assets/huggingface_logo.svg", width=150)
