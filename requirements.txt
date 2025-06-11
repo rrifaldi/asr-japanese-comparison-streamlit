@@ -2,11 +2,12 @@ transformers
 accelerate
 datasets
 soundfile
-librosa==0.10.1 # Coba versi librosa yang lebih tua
 streamlit
 pykakasi
+# jiwer (jika tidak ada)
+# requests (jika tidak ada)
 torch==2.6.0
 torchvision==0.21.0
 torchaudio==2.6.0
-numba==0.56.4 # Kunci numba ke versi yang lebih lama dan lebih stabil
-llvmlite==0.39.1 # Kunci llvmlite yang kompatibel dengan numba ini (jika masih error)
+# numba (dihapus karena dependensi librosa)
+# llvmlite (dihapus karena dependensi librosa)
