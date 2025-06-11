@@ -4,10 +4,6 @@ datasets
 soundfile
 streamlit
 pykakasi
-# jiwer (jika tidak ada)
-# requests (jika tidak ada)
-torch==2.6.0
-torchvision==0.21.0
-torchaudio==2.6.0
-# numba (dihapus karena dependensi librosa)
-# llvmlite (dihapus karena dependensi librosa)
+torch
+torchvision
+torchaudio
