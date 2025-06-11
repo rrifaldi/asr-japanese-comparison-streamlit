@@ -6,16 +6,13 @@ import io
 import time
 import soundfile as sf
 import pykakasi # Impor library untuk transliterasi Romaji
-from jiwer import wer # Impor jiwer untuk WER
-import requests # Untuk mengunduh file audio dari URL
 
 # --- KONFIGURASI MODEL ---
 MODEL_WHISPER_BASE = "openai/whisper-base"
 MODEL_ANIME_WHISPER = "litagin/anime-whisper"
 
-# Model terjemahan Jepang ke Inggris (Nama model yang lebih umum/standar)
+# Model terjemahan Jepang ke Inggris
 MODEL_TRANSLATION_JA_EN = "Helsinki-NLP/opus-mt-ja-en" 
-# MODEL_TRANSLATION_EN_ID tidak diperlukan lagi
 
 # Inisialisasi Kakasi (untuk konversi Jepang ke Romaji)
 kks = pykakasi.kakasi()
@@ -25,29 +22,6 @@ kks.setMode("J", "a") # Kanji to Alphabet
 kks.setMode("r", "Hepburn") # Romaji system
 converter = kks.getConverter()
 
-# --- DATA UJI OTOMATIS (CONTOH) ---
-# Anda bisa mengganti URL dan ground truth ini dengan data Anda sendiri
-# Pastikan URL audio dapat diakses publik.
-TEST_AUDIOS = {
-    "Sapaan Pagi (Kon'nichiwa)": { # Contoh URL
-        "url": "https://www.learning-japanese.com/sounds/konnichiwa.mp3",
-        "ground_truth_jp": "こんにちは",
-        "ground_truth_romaji": "konnichiwa", # Untuk referensi
-        "ground_truth_id": "Halo" # Untuk referensi
-    },
-    "Terima Kasih (Arigatou Gozaimasu)": {
-        "url": "https://www.learning-japanese.com/sounds/arigatou.mp3",
-        "ground_truth_jp": "ありがとうございます",
-        "ground_truth_romaji": "arigatou gozaimasu",
-        "ground_truth_id": "Terima kasih banyak"
-    },
-    "Contoh Frasa Anime (Fiksi)": {
-        "url": "https://file-examples.com/storage/feae07a82762b3225a07c00/2017/11/file_example_MP3_700KB.mp3", # Ganti dengan audio anime jika ada!
-        "ground_truth_jp": "行くぞ", 
-        "ground_truth_romaji": "iku zo",
-        "ground_truth_id": "Ayo pergi!"
-    }
-}
 
 # --- CACHE MODEL ---
 @st.cache_resource
@@ -70,28 +44,14 @@ def load_translator_ja_en(model_name):
         st.error(f"❌ Gagal memuat model terjemahan {model_name}: {e}. Terjemahan Jepang-Inggris mungkin tidak berfungsi.")
         return None
 
-# load_translator_en_id tidak diperlukan lagi
-
 # --- FUNGSI PEMROSESAN AUDIO ---
 def convert_to_romaji(text_japanese):
+    """Mengonversi teks Jepang (Kanji/Kana) ke Romaji."""
     if not text_japanese:
         return ""
     return converter.do(text_japanese)
 
-def download_audio(url, filename="downloaded_audio.mp3"):
-    """Mengunduh file audio dari URL."""
-    try:
-        response = requests.get(url, stream=True)
-        response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
-        with open(filename, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                f.write(chunk)
-        return filename
-    except requests.exceptions.RequestException as e:
-        st.error(f"❌ Gagal mengunduh audio dari URL: {e}")
-        return None
-
-def process_audio_with_model(audio_path, asr_pipeline, translator_ja_en_pipeline, model_label, ground_truth_jp): # translator_en_id_pipeline dihapus
+def process_audio_with_model(audio_path, asr_pipeline, translator_ja_en_pipeline, model_label):
     """Memproses audio dengan model ASR tertentu, lalu menerjemahkan."""
     st.subheader(f"Hasil dari: {model_label}")
     
@@ -110,15 +70,6 @@ def process_audio_with_model(audio_path, asr_pipeline, translator_ja_en_pipeline
     # Tampilkan Transkripsi Jepang Asli
     st.markdown("**Transkripsi Jepang Asli (Kanji/Kana):**")
     st.code(transcription_japanese)
-
-    # Hitung dan Tampilkan WER (Word Error Rate)
-    if ground_truth_jp and transcription_japanese and transcription_japanese != "Error saat transkripsi.":
-        gt_normalized = " ".join(ground_truth_jp.split())
-        trans_normalized = " ".join(transcription_japanese.split())
-        current_wer = wer(gt_normalized, trans_normalized)
-        st.markdown(f"**Word Error Rate (WER):** `{current_wer:.4f}` (Semakin rendah, semakin baik)")
-    else:
-        st.info("WER tidak dapat dihitung tanpa ground truth atau jika transkripsi gagal.")
 
     # Konversi ke Romaji
     st.markdown("**Romaji:**")
@@ -147,10 +98,10 @@ def process_audio_with_model(audio_path, asr_pipeline, translator_ja_en_pipeline
 
 
 # --- INTERFACE PENGGUNA STREAMLIT ---
-st.set_page_config(layout="wide", page_title="Perbandingan ASR & Terjemahan Audio Jepang Otomatis")
+st.set_page_config(layout="wide", page_title="Perbandingan ASR & Terjemahan Audio Jepang")
 
-st.title("🗣️ Perbandingan ASR & Terjemahan Audio Jepang (Otomatis)")
-st.markdown("Pilih file audio uji untuk membandingkan transkripsi dari dua model Whisper, serta mendapatkan Romaji dan terjemahan Bahasa Inggris secara otomatis.")
+st.title("🗣️ Perbandingan ASR & Terjemahan Audio Jepang")
+st.markdown("Unggah file audio berbahasa Jepang untuk membandingkan transkripsi dari dua model Whisper, serta mendapatkan Romaji dan terjemahan Bahasa Inggris.")
 st.markdown("---")
 
 # Muat model ASR dan Terjemahan
@@ -158,55 +109,48 @@ with st.spinner("⏳ Memuat semua model AI (ASR & Terjemahan)... Ini mungkin but
     asr_pipeline_base = load_asr_model(MODEL_WHISPER_BASE)
     asr_pipeline_anime = load_asr_model(MODEL_ANIME_WHISPER)
     translator_ja_en_pipeline = load_translator_ja_en(MODEL_TRANSLATION_JA_EN)
-    # translator_en_id_pipeline tidak diperlukan lagi
 st.success("✅ Semua model AI berhasil dimuat dan siap digunakan.")
 
 
-st.header("1. Pilih File Audio Uji")
-selected_test_audio_name = st.selectbox(
-    "Pilih skenario audio untuk diuji:",
-    list(TEST_AUDIOS.keys())
+st.header("1. Unggah File Audio Bahasa Jepang")
+uploaded_file = st.file_uploader(
+    "Pilih file audio (.wav, .mp3, .flac) berbahasa Jepang:",
+    type=["wav", "mp3", "flac"]
 )
 
-selected_test_audio_data = TEST_AUDIOS[selected_test_audio_name]
-audio_url_to_test = selected_test_audio_data["url"]
-ground_truth_japanese = selected_test_audio_data["ground_truth_jp"]
-ground_truth_romaji = selected_test_audio_data["ground_truth_romaji"]
-ground_truth_indonesian = selected_test_audio_data["ground_truth_id"] # Masih ada untuk display ground truth
+audio_path = None
+if uploaded_file is not None:
+    st.audio(uploaded_file, format=uploaded_file.type)
+    
+    try:
+        audio_path = "temp_uploaded_audio.wav"
+        with open(audio_path, "wb") as f:
+            f.write(uploaded_file.read())
+        st.success("✅ File audio berhasil diunggah.")
+    except Exception as e:
+        st.error(f"❌ Error membaca file audio: {e}")
+        st.info("Pastikan format file audio kompatibel dan tidak korup. Coba unggah file lain.")
+        audio_path = None
+else:
+    st.info("👆 Silakan unggah file audio berbahasa Jepang untuk memulai proses.")
 
-st.write(f"Audio yang dipilih: `{selected_test_audio_name}`")
-# Tampilkan ground truth
-st.markdown("### Ground Truth (Verifikasi Manusia)")
-st.write(f"**Jepang (Kanji/Kana):** `{ground_truth_japanese}`")
-st.write(f"**Romaji:** `{ground_truth_romaji}`")
-st.write(f"**Indonesia (Untuk Referensi):** `{ground_truth_indonesian}`") # Tetap tampilkan referensi ID
 
 st.markdown("---")
-st.header("2. Mulai Perbandingan Otomatis")
+st.header("2. Hasil Perbandingan Transkripsi & Terjemahan")
 
-if st.button("▶️ Jalankan Perbandingan!"):
-    if audio_url_to_test:
-        with st.spinner("⏳ Mengunduh file audio uji..."):
-            audio_file_temp_path = download_audio(audio_url_to_test)
+if st.button("▶️ Mulai Perbandingan!"):
+    if audio_path:
+        # Proses audio dengan OpenAI Whisper (Base)
+        process_audio_with_model(audio_path, asr_pipeline_base, translator_ja_en_pipeline, "OpenAI Whisper (Base)")
         
-        if audio_file_temp_path:
-            st.audio(audio_file_temp_path) # Putar audio yang diunduh
-            
-            # Proses audio dengan OpenAI Whisper (Base)
-            # translator_en_id_pipeline dihapus dari argumen
-            process_audio_with_model(audio_file_temp_path, asr_pipeline_base, translator_ja_en_pipeline, "OpenAI Whisper (Base)", ground_truth_japanese)
-            
-            # Proses audio dengan litagin/anime-whisper
-            # translator_en_id_pipeline dihapus dari argumen
-            process_audio_with_model(audio_file_temp_path, asr_pipeline_anime, translator_ja_en_pipeline, "litagin/anime-whisper", ground_truth_japanese)
+        # Proses audio dengan litagin/anime-whisper
+        process_audio_with_model(audio_path, asr_pipeline_anime, translator_ja_en_pipeline, "litagin/anime-whisper")
 
-            # Hapus file sementara setelah selesai memproses
-            if os.path.exists(audio_file_temp_path):
-                os.remove(audio_file_temp_path)
-        else:
-            st.error("Gagal mengunduh audio uji.")
+        # Hapus file sementara setelah selesai memproses
+        if os.path.exists(audio_path):
+            os.remove(audio_path)
     else:
-        st.warning("Silakan pilih skenario audio untuk memulai perbandingan.")
+        st.warning("Silakan unggah file audio Anda terlebih dahulu di bagian '1. Unggah File Audio'.")
 
 st.markdown("---")
-st.caption("Aplikasi ini dibuat dengan Streamlit, Hugging Face Transformers, dan jiwer.")
+st.caption("Aplikasi ini dibuat dengan Streamlit dan Hugging Face Transformers.")
