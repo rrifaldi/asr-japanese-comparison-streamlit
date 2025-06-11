@@ -9,8 +9,7 @@ import pykakasi
 import difflib
 from jiwer import wer, cer
 
-# --- FUNGSI UTILITY: HIGHLIGHT PERBEDAAN TEKS (TETAP SAMA) ---
-# Fungsi ini relatif stabil, tidak perlu diubah lagi
+# --- FUNGSI UTILITY: HIGHLIGHT PERBEDAAN TEKS ---
 def highlight_diff(text1, text2, label1="Teks 1", label2="Teks 2"):
     """
     Membandingkan dua teks karakter demi karakter dan menghasilkan HTML
@@ -148,7 +147,6 @@ def process_audio_with_model(audio_file_path, asr_pipeline, model_label, pykakas
         st.markdown("**Kanji/Kana:**")
         st.code(transcription_japanese)
         st.markdown("**Romaji:**")
-        # Menggunakan converter yang telah diinisialisasi
         romaji_text = pykakasi_converter.do(transcription_japanese) if pykakasi_initialized else "Transliterasi Romaji tidak tersedia."
         st.code(romaji_text)
 
@@ -158,17 +156,17 @@ def process_audio_with_model(audio_file_path, asr_pipeline, model_label, pykakas
 
 
 # --- KONFIGURASI UMUM DAN INISIALISASI DI AWAL SKRIP ---
-# Ini harus di awal agar st.set_page_config tidak error
+# Variabel global untuk nama model
 MODEL_WHISPER_BASE = "openai/whisper-base"
 MODEL_ANIME_WHISPER = "litagin/anime-whisper"
 
-# Inisialisasi PYKAKASI DI SINI SEBELUM st.set_page_config
+# Inisialisasi PYKAKASI (HARUS SEBELUM st.set_page_config)
 PYKAKASI_INITIALIZED = False
-kakasi_converter = None # Nama variabel diubah agar tidak bentrok dengan "converter" di fungsi highlight_diff
+kakasi_converter = None
 try:
     kks_obj = pykakasi.kakasi()
-    # Kembali ke setMode untuk kompatibilitas pykakasi v2.x
-    # Ini akan memunculkan DeprecationWarning, tapi berfungsi.
+    # Menggunakan setMode untuk kompatibilitas dengan pykakasi v2.x
+    # Ini akan memicu DeprecationWarning, tapi fungsionalitas tetap berjalan.
     kks_obj.setMode("H", "a") # Hiragana to Alphabet
     kks_obj.setMode("K", "a") # Katakana to Alphabet
     kks_obj.setMode("J", "a") # Kanji to Alphabet
@@ -176,7 +174,7 @@ try:
     kakasi_converter = kks_obj.getConverter()
     PYKAKASI_INITIALIZED = True
 except Exception as e:
-    # st.warning() tidak bisa dipanggil di sini karena belum diinisialisasi UI Streamlit
+    # Menggunakan print() karena st.warning() tidak bisa dipanggil di sini
     print(f"Peringatan: Gagal menginisialisasi pykakasi untuk transliterasi Romaji: {e}")
     print("Transliterasi Romaji tidak akan tersedia. Pastikan `pykakasi` terinstal dengan benar.")
     class DummyConverter: # Dummy converter jika pykakasi gagal
@@ -194,7 +192,6 @@ st.markdown("---")
 
 
 # --- MUAT MODEL ASR (SETELAH st.set_page_config) ---
-# Menggunakan cache Streamlit untuk efisiensi
 @st.cache_resource
 def load_asr_models_cached():
     """Wrapper untuk memuat kedua model ASR dengan caching."""
@@ -207,7 +204,7 @@ def load_asr_models_cached():
 
     # Fungsi internal untuk memuat satu model
     def _load_single_model(model_name_param):
-        st.info(f"Mengunduh dan memuat model: {model_name_param}...")
+        # MENGHAPUS st.info/st.success DI SINI AGAR TIDAK MUNCUL KOTAK NOTIFIKASI
         try:
             pipe = pipeline(
                 "automatic-speech-recognition",
@@ -216,7 +213,6 @@ def load_asr_models_cached():
                 torch_dtype=torch_dtype,
                 model_kwargs={"low_cpu_mem_usage": True, "use_safetensors": True}
             )
-            st.success(f"Model '{model_name_param}' berhasil dimuat pada perangkat: {device.upper()}.")
             return pipe
         except Exception as e:
             st.error(f"❌ Gagal memuat model '{model_name_param}': {e}")
@@ -228,6 +224,7 @@ def load_asr_models_cached():
     anime_whisper_pipeline_local = _load_single_model(MODEL_ANIME_WHISPER)
     return asr_pipeline_base_local, anime_whisper_pipeline_local
 
+# Tampilkan spinner utama saat memuat model
 with st.spinner("⏳ Memuat model AI untuk Automatic Speech Recognition (ASR)... Ini mungkin butuh beberapa saat, tergantung ukuran model dan koneksi internet."):
     asr_pipeline_base, anime_whisper_pipeline = load_asr_models_cached()
 
