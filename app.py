@@ -24,22 +24,21 @@ converter = kks.getConverter()
 # --- CACHE MODEL ---
 @st.cache_resource
 def load_asr_model(model_name):
+    # This message is shown in the main app loading spinner
     device = 0 if torch.cuda.is_available() else -1
     asr_pipe = pipeline("automatic-speech-recognition", model=model_name, device=device)
     return asr_pipe
 
 
-# --- FUNGSI UTILITY UNTUK PERBANDINGAN ---
+# --- UTILITY FUNCTION FOR TEXT COMPARISON ---
 def highlight_diff(text1, text2, label1="Teks 1", label2="Teks 2"):
     """
-    Membandingkan dua teks dan mengembalikan HTML yang menyorot perbedaan.
-    Digunakan untuk menampilkan perbedaan antar transkripsi.
+    Compares two texts and returns HTML that highlights the differences.
+    Used to display differences between transcriptions side-by-side.
     """
     matcher = difflib.SequenceMatcher(None, text1.split(), text2.split())
     
-    # Untuk versi A (Whisper Base)
     diff_text1 = []
-    # Untuk versi B (Anime Whisper)
     diff_text2 = []
 
     for opcode, a_start, a_end, b_start, b_end in matcher.get_opcodes():
@@ -47,32 +46,28 @@ def highlight_diff(text1, text2, label1="Teks 1", label2="Teks 2"):
             diff_text1.extend(text1.split()[a_start:a_end])
             diff_text2.extend(text2.split()[b_start:b_end])
         elif opcode == 'replace':
-            # Teks dari text1 yang diganti (dihapus)
             deleted_from_1 = [f"<span style='background-color: #ffdddd; text-decoration: line-through;'>{word}</span>" for word in text1.split()[a_start:a_end]]
-            # Teks dari text2 yang menggantikan (ditambah)
             inserted_in_2 = [f"<span style='background-color: #ddffdd;'>{word}</span>" for word in text2.split()[b_start:b_end]]
             
             diff_text1.extend(deleted_from_1)
             diff_text2.extend(inserted_in_2)
         elif opcode == 'delete':
-            # Teks yang hanya ada di text1 (dihapus dari text1)
             deleted_from_1 = [f"<span style='background-color: #ffdddd; text-decoration: line-through;'>{word}</span>" for word in text1.split()[a_start:a_end]]
             
             diff_text1.extend(deleted_from_1)
-            diff_text2.extend(["<span style='color: #888888; font-style: italic;'>[kosong]</span>" for _ in range(a_end - a_start)]) # Placeholder
+            diff_text2.extend(["<span style='color: #888888; font-style: italic;'>[kosong]</span>" for _ in range(a_end - a_start)])
         elif opcode == 'insert':
-            # Teks yang hanya ada di text2 (ditambah di text2)
             inserted_in_2 = [f"<span style='background-color: #ddffdd;'>{word}</span>" for word in text2.split()[b_start:b_end]]
             
-            diff_text1.extend(["<span style='color: #888888; font-style: italic;'>[kosong]</span>" for _ in range(b_end - b_start)]) # Placeholder
+            diff_text1.extend(["<span style='color: #888888; font-style: italic;'>[kosong]</span>" for _ in range(b_end - b_start)])
             diff_text2.extend(inserted_in_2)
             
-    # Membuat format tabel HTML untuk perbandingan
     html_output = f"""
     <style>
         .diff-table {{
             width: 100%;
             border-collapse: collapse;
+            font-family: monospace; /* Font monospasi agar alignment lebih baik */
         }}
         .diff-table th, .diff-table td {{
             border: 1px solid #444;
@@ -88,16 +83,8 @@ def highlight_diff(text1, text2, label1="Teks 1", label2="Teks 2"):
             background-color: #222;
             color: #eee;
         }}
-        .diff-table del {{
-            color: #ff5555; /* Merah untuk dihapus */
-            text-decoration: line-through;
-        }}
-        .diff-table ins {{
-            color: #55ff55; /* Hijau untuk ditambahkan */
-            text-decoration: none; /* Hapus underline default */
-        }}
-        .diff-table span[style*="background-color: #ffdddd"] {{ background-color: #ffdddd; color: #333; }}
-        .diff-table span[style*="background-color: #ddffdd"] {{ background-color: #ddffdd; color: #333; }}
+        .diff-table span[style*="background-color: #ffdddd"] {{ background-color: #ffdddd; color: #333; }} /* Merah muda */
+        .diff-table span[style*="background-color: #ddffdd"] {{ background-color: #ddffdd; color: #333; }} /* Hijau muda */
     </style>
     <table class="diff-table">
         <thead>
@@ -124,9 +111,9 @@ def convert_to_romaji(text_japanese):
         return ""
     return converter.do(text_japanese)
 
-# Mengubah fungsi process_audio_with_model agar mengembalikan hasil transkripsi
-def process_audio_with_model(audio_path, asr_pipeline, model_label):
+def process_audio_with_model(audio_path, asr_pipeline, model_label): # argumen translator_ja_en_pipeline dihapus
     """Memproses audio dengan model ASR tertentu."""
+    st.subheader(f"Hasil dari: {model_label}")
     
     transcription_japanese = "Error saat transkripsi." # Default error
     
@@ -149,9 +136,11 @@ def process_audio_with_model(audio_path, asr_pipeline, model_label):
             
     except Exception as e:
         st.error(f"❌ Terjadi kesalahan saat transkripsi: {e}")
+        # Log error detail ke console Streamlit untuk debugging
+        st.exception(e) 
     
     # Tampilkan Transkripsi Jepang Asli dan Romaji dalam expander
-    st.markdown(f"**Transkripsi Jepang dari {model_label}:**")
+    st.markdown(f"**Transkripsi dari {model_label}:**")
     with st.expander(f"Lihat detail transkripsi {model_label}"):
         st.markdown("**Kanji/Kana:**")
         st.code(transcription_japanese)
@@ -159,9 +148,9 @@ def process_audio_with_model(audio_path, asr_pipeline, model_label):
         romaji_text = convert_to_romaji(transcription_japanese)
         st.code(romaji_text)
     
-    st.write("---") # Garis pemisah
+    st.write("---") # Garis pemisah antar model
     
-    return transcription_japanese # Mengembalikan hasil transkripsi
+    return transcription_japanese # Mengembalikan hasil transkripsi untuk perbandingan
 
 
 # --- INTERFACE PENGGUNA STREAMLIT ---
@@ -224,12 +213,15 @@ with tab1: # Konten utama aplikasi
                 os.remove(audio_path)
             
             # Setelah kedua transkripsi didapat, tampilkan perbandingan langsung
-            if st.session_state.base_transcript and st.session_state.anime_transcript:
+            if st.session_state.base_transcript and st.session_state.anime_transcript and \
+               st.session_state.base_transcript != "Error saat transkripsi." and \
+               st.session_state.anime_transcript != "Error saat transkripsi.":
+                
                 st.markdown("### Perbandingan Langsung Transkripsi (Kanji/Kana)")
                 diff_output_html = highlight_diff(st.session_state.base_transcript, st.session_state.anime_transcript, "Whisper Base", "Anime-Whisper")
                 st.markdown(diff_output_html, unsafe_allow_html=True)
             else:
-                st.warning("Tidak dapat membandingkan transkripsi karena salah satu atau kedua model gagal.")
+                st.warning("Tidak dapat membandingkan transkripsi karena salah satu atau kedua model gagal atau menghasilkan error.")
         else:
             st.warning("Silakan unggah file audio Anda terlebih dahulu di bagian '1. Unggah File Audio'.")
 
@@ -252,7 +244,7 @@ with tab2: # Konten tentang proyek
     - **ASR:** Model Transformer Encoder-Decoder mengubah audio menjadi teks.
     - **Transliterasi:** PyKakasi untuk konversi Kanji/Kana ke Romaji.
     - **Perbandingan Teks:** Menggunakan pustaka `difflib` untuk menyoroti perbedaan antar transkripsi.
-    - **Hosting:** Aplikasi web dibangun dengan Streamlit dan di-deploy menggunakan GitHub, dengan dependensi sistem seperti FFmpeg diatur melalui `packages.txt`.
+    - **Hosting:** Aplikasi web dibangun dengan Streamlit dan di-deploy menggunakan GitHub, dengan dependensi sistem seperti FFmpeg, pkg-config, dan cmake diatur melalui `packages.txt`.
 
     ### Kontak:
     Untuk pertanyaan atau informasi lebih lanjut, silakan hubungi [Nama Anda/Link GitHub Anda].
